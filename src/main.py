@@ -663,6 +663,8 @@ class downloader:
         if self.c_fav_posts or self.c_fav_users:
             if not 'coomer.party' in domains:
                 domains.append('coomer.party')
+        
+        logger.debug(f"Cookie loaded: {self.cookies}")
 
         for domain in domains:
             try:
