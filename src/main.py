@@ -17,6 +17,9 @@ from .version import __version__
 from .helper import get_file_hash, print_download_bar, check_date, parse_url, compile_post_path, compile_file_path, RefererSession
 from .my_yt_dlp import my_yt_dlp
 
+# add http proxy like ```the_proxies = {"https": "127.0.0.1:1080"}``` if necessary
+the_proxies = {}
+
 class downloader:
 
     def __init__(self, args):
@@ -100,9 +103,9 @@ class downloader:
 
     def get_creators(self, domain:str):
         # get site creators
-        creators_api = f"https://{domain}/api/creators/"
+        creators_api = f"https://{domain}/api/v1/creators.txt"
         logger.debug(f"Getting creator json from {creators_api}")
-        return self.session.get(url=creators_api, cookies=self.cookies, headers=self.headers, timeout=self.timeout).json()
+        return self.session.get(url=creators_api, cookies=self.cookies, headers=self.headers, proxies=the_proxies, timeout=self.timeout).json()
 
     def get_user(self, user_id:str, service:str):
         for creator in self.creators:
@@ -111,9 +114,9 @@ class downloader:
         return None
 
     def get_favorites(self, domain:str, fav_type:str, services:list = None):
-        fav_api = f'https://{domain}/api/favorites?type={fav_type}'
+        fav_api = f'https://{domain}/api/v1/favorites?type={fav_type}'
         logger.debug(f"Getting favorite json from {fav_api}")
-        response = self.session.get(url=fav_api, headers=self.headers, cookies=self.cookies, timeout=self.timeout)
+        response = self.session.get(url=fav_api, headers=self.headers, cookies=self.cookies, proxies=the_proxies, timeout=self.timeout)
         if response.status_code == 401:
             logger.error(f"{response.status_code} {response.reason} | Bad cookie file")
             return
@@ -122,19 +125,19 @@ class downloader:
             return
         for favorite in response.json():
             if fav_type == 'post':
-                self.get_post(f"https://{domain}/{favorite['service']}/user/{favorite['user']}/post/{favorite['id']}")
+                self.get_post(f"https://{domain}/api/v1/{favorite['service']}/user/{favorite['user']}/post/{favorite['id']}")
             if fav_type == 'artist':
                 if not (favorite['service'] in services or 'all' in services):
                     logger.info(f"Skipping user {favorite['name']} | Service {favorite['service']} was not requested")
                     continue
-                self.get_post(f"https://{domain}/{favorite['service']}/user/{favorite['id']}")
+                self.get_post(f"https://{domain}/api/v1/{favorite['service']}/user/{favorite['id']}")
 
     def get_post(self, url:str):
         found = re.search(r'(https://((?:kemono|coomer)\.(?:party|su))/)(([^/]+)/user/([^/]+)($|/post/[^/]+))', url)
         if not found:
             logger.error(f"Unable to find url parameters for {url}")
             return
-        api = f"{found.group(1)}api/{found.group(3)}"
+        api = f"{found.group(1)}api/v1/{found.group(3)}"
         site = found.group(2)
         service = found.group(4)
         user_id = found.group(5)
@@ -152,10 +155,10 @@ class downloader:
         while True:
             if is_post:
                 logger.debug(f"Requesting post json from: {api}")
-                json = self.session.get(url=api, cookies=self.cookies, headers=self.headers, timeout=self.timeout).json()
+                json = self.session.get(url=api, cookies=self.cookies, headers=self.headers, proxies=the_proxies, timeout=self.timeout).json()
             else:
                 logger.debug(f"Requesting user json from: {api}?o={chunk}")
-                json = self.session.get(url=f"{api}?o={chunk}", cookies=self.cookies, headers=self.headers, timeout=self.timeout).json()
+                json = self.session.get(url=f"{api}?o={chunk}", cookies=self.cookies, headers=self.headers, proxies=the_proxies, timeout=self.timeout).json()
             if not json:
                 if is_post:
                     logger.error(f"Unable to find post json for {api}")
@@ -200,7 +203,7 @@ class downloader:
                 logger.warning(f"Profile {img_type}s are not supported for {post['post_variables']['service']} users")
                 return
             image_url = "https://{site}/{img_type}s/{service}/{user_id}".format(img_type=img_type, **post['post_variables'])
-            response = self.session.get(url=image_url,headers=self.headers, cookies=self.cookies, timeout=self.timeout)
+            response = self.session.get(url=image_url,headers=self.headers, cookies=self.cookies, proxies=the_proxies, timeout=self.timeout)
             try:
                 image = Image.open(BytesIO(response.content))
                 file_variables = {
@@ -223,7 +226,7 @@ class downloader:
     def write_dms(self, post:dict):
         # no api method to get comments so using from html (not future proof)
         post_url = "https://{site}/{service}/user/{user_id}/dms".format(**post['post_variables'])
-        response = self.session.get(url=post_url, allow_redirects=True, headers=self.headers, cookies=self.cookies, timeout=self.timeout)
+        response = self.session.get(url=post_url, allow_redirects=True, headers=self.headers, cookies=self.cookies, proxies=the_proxies, timeout=self.timeout)
         page_soup = BeautifulSoup(response.text, 'html.parser')
         if page_soup.find("div", {"class": "no-results"}):
             logger.info("No DMs found for https://{site}/{service}/user/{user_id}".format(**post['post_variables']))
@@ -275,7 +278,7 @@ class downloader:
         try:
             # no api method to get comments so using from html (not future proof)
             post_url = "https://{site}/{service}/user/{user_id}/post/{id}".format(**post_variables)
-            response = self.session.get(url=post_url, allow_redirects=True, headers=self.headers, cookies=self.cookies, timeout=self.timeout)
+            response = self.session.get(url=post_url, allow_redirects=True, headers=self.headers, cookies=self.cookies, proxies=the_proxies, timeout=self.timeout)
             page_soup = BeautifulSoup(response.text, 'html.parser')
             comment_soup = page_soup.find("div", {"class": "post__comments"})
             no_comments = re.search('([^ ]+ does not support comment scraping yet\.|No comments found for this post\.)',comment_soup.text)
@@ -452,7 +455,7 @@ class downloader:
             logger.info(f"Trying to resuming partial download | Resume size: {resume_size} bytes")
 
         try:
-            response = self.session.get(url=file['file_variables']['url'], stream=True, headers={**self.headers,'Range':f"bytes={resume_size}-"}, cookies=self.cookies, timeout=self.timeout)
+            response = self.session.get(url=file['file_variables']['url'], stream=True, headers={**self.headers,'Range':f"bytes={resume_size}-"}, cookies=self.cookies, proxies=the_proxies, timeout=self.timeout)
         except:
             logger.exception(f"Failed to get responce: {file['file_variables']['url']} | Retrying")
             if retry > 0:
@@ -475,7 +478,7 @@ class downloader:
 
         if response.status_code == 416:
             logger.warning(f"Failed to download: {os.path.split(file['file_path'])[1]} | 416 Range Not Satisfiable | Assuming broken server hash value")
-            content_length = self.session.get(url=file['file_variables']['url'], stream=True, headers=self.headers, cookies=self.cookies, timeout=self.timeout).headers.get('content-length', '')
+            content_length = self.session.get(url=file['file_variables']['url'], stream=True, headers=self.headers, cookies=self.cookies, proxies=the_proxies, timeout=self.timeout).headers.get('content-length', '')
             if content_length == resume_size:
                 logger.debug("Correct amount of bytes downloaded | Assuming download completed successfully")
                 if self.overwrite:
@@ -709,7 +712,7 @@ class downloader:
         if isinstance(time, Number):
             t = datetime.datetime.fromtimestamp(time)
         elif isinstance(time, str):
-            t = datetime.datetime.strptime(time, date_format)
+            t = datetime.datetime.fromisoformat(time)
         elif time == None:
             return None
         else:
